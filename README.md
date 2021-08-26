@@ -1,7 +1,5 @@
 **better_midi_to_rawvideo**
 
-[toc]
-
 ## 编译:
 
 > gcc \*.c -Ofast
