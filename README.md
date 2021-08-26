@@ -42,7 +42,7 @@ _(别改太离谱的参数，根本没有越界检查的)_
 mpv:
 
 > ./a.out | mpv --demuxer=rawvideo --demuxer-rawvideo-{w=1920,h=1080,fps=60,size=8294400,format=BGRA}  
-> \# 8294400 = 1920 _ 1080 _ 4  
+> \# 8294400 = 1920 \* 1080 \* 4  
 > \# 可以用 --audio-file= 指定同时播放的音频文件
 
 ffplay(ffmpeg):
