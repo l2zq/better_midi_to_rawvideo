@@ -40,6 +40,7 @@ struct {
   ui16 *bar_y;
   ui16 fall_h;
   ui16 half_key;
+  ui16 keyboard_y;
 } consts;
 struct {
   ui32 *data;
@@ -49,22 +50,16 @@ void real_main();
 int main(void) {
   param.filename = NULL;
 
-  param.frame_w = 1920;
-  param.frame_h = 1080;
-  param.fps_up = 60; // fps = fps_up / fps_dn
+  param.frame_w = 1280;
+  param.frame_h = 720;
+  param.fps_up = 120; // fps = fps_up / fps_dn
   param.fps_dn = 1;
 
-  // mpv:
-  // ./a.out | mpv --demuxer=rawvideo --demuxer-rawvideo-{w=1920,h=1080,fps=60,size=8294400,format=BGRA}
-  // 8294400 = 1920 * 1080 * 4
-  // ffplay (ffmpeg)
-  // ./a.out | ffplay -f rawvideo -pixel_format bgra -video_size 1920x1080 -framerate 60 -i -
-
   param.draw_barborder = true;
-  
+
   param.draw_keyboard = true;
-  param.keyboard_h = 108;
-  param.blackkey_h = 72;
+  param.keyboard_h = param.frame_h / 10;
+  param.blackkey_h = param.frame_h / 15;
 
   param.screen_height = param.frame_h - (param.draw_keyboard ? param.keyboard_h : 0);
 
@@ -89,6 +84,7 @@ int main(void) {
       free(frame.data);
       return -1;
     }
+    consts.keyboard_y = param.frame_h - (param.draw_keyboard ? param.keyboard_h : 0);
     consts.half_key = param.frame_w / 128 / 2;
     for (ui16 x = 0; x <= 128; x++)
       consts.key_x[x] = x * param.frame_w / 128;
@@ -164,6 +160,7 @@ int main(void) {
 
 TNumList q_mpqn;
 TNumList q_note_dn;
+TNumList q_note_up;
 bool tick_ended;
 tk_t tick_procd; // processed tick count
 void tick_begin() {
@@ -185,7 +182,8 @@ tk_t tick_runto(tk_t wanted) { // should call everytime scr top time increases (
     do {
       bool lef;
       ui32 mdt = MIDI_MAXDT + 1, dt,
-           notedn_cnt = 0;
+           notedn_cnt = 0,
+           noteup_cnt = 0;
       midi.trk = midi.trks;
       for (int it = 0; it < midi.ntrk; it++, midi.trk++)
         if (midi.trk->track_left) {
@@ -200,10 +198,15 @@ tk_t tick_runto(tk_t wanted) { // should call everytime scr top time increases (
                   notedn_cnt++;
                   break;
                 }
-              case 0x8:
-                if (tckk_keyup(it, midi.evt.b & 0xf, midi.evt.a1) == oldnoteids[midi.evt.a1])
-                  end_old_no[midi.evt.a1] = true;
+              case 0x8: {
+                no_t up_id = tckk_keyup(it, midi.evt.b & 0xf, midi.evt.a1);
+                if (up_id > 0) {
+                  noteup_cnt++;
+                  if (up_id == oldnoteids[midi.evt.a1])
+                    end_old_no[midi.evt.a1] = true;
+                }
                 break;
+              }
               case 0xf:
                 if (midi.evt.b == 0xff && midi.evt.msys.type == 0x51 && midi.evt.msys.size >= 3) {
                   ui32 mpqn = midi.evt.msys.data[0];
@@ -245,9 +248,14 @@ tk_t tick_runto(tk_t wanted) { // should call everytime scr top time increases (
         end_old_no[jk] = false;
       }
 
-      TNum *tnm = TNL_push(&q_note_dn);
+      TNum *tnm;
+      tnm = TNL_push(&q_note_dn);
       tnm->tick = tick_procd;
       tnm->numb = notedn_cnt;
+
+      tnm = TNL_push(&q_note_up);
+      tnm->tick = tick_procd;
+      tnm->numb = noteup_cnt;
 
       if (mdt > MIDI_MAXDT) {
         tick_ended = true;
@@ -263,6 +271,7 @@ tk_t tick_runto(tk_t wanted) { // should call everytime scr top time increases (
 void real_main() {
   TNL_ini(&q_mpqn);
   TNL_ini(&q_note_dn);
+  TNL_ini(&q_note_up);
   // setup bars
   bars.screen_bot = 0;
   bars.screen_top = bars.screen_bot + param.screen_height;
@@ -278,7 +287,7 @@ void real_main() {
        next_midi = 0, next_frame = 0;
   tm_t midi_interval = mpqn * param.fps_up,
        frame_interval = 1000000 * midi.divs * param.fps_dn;
-  ui32 frame_cnt = 0, notedn_cnt = 0;
+  ui32 frame_cnt = 0, notedn_cnt = 0, noteup_cnt = 0;
 
   char message[256];
 
@@ -299,6 +308,12 @@ void real_main() {
         notedn_cnt += tnm->numb;
         tnm = TNL_pop(&q_note_dn);
       }
+      tnm = q_note_up.head.next;
+      while (tnm && tnm->tick <= bars.screen_bot) {
+        noteup_cnt += tnm->numb;
+        tnm = TNL_pop(&q_note_up);
+      }
+
       next_midi += midi_interval;
     }
     if (curr_time == next_frame) {
@@ -312,7 +327,7 @@ void real_main() {
         ui16 bar_u, bar_d,                                       //
             bar_l = consts.key_x[jk],                            // bar l, r, u, d
             bar_r = consts.key_x[jk + 1];                        //
-        bool bdr_bot, bdr_top, bdr_lr = param.draw_barborder;
+        bool bdr_bot, bdr_top, bdr_lr, tmp_lr;
         while ((bar = nex)) {
           // break;
           nex = bar->next, bar_end = bar->bend;
@@ -327,7 +342,11 @@ void real_main() {
           bar_d = consts.bar_y[bar_dn]; // bar down y
           bar_u = consts.bar_y[bar_up]; // bar   up y
 
-          bdr_top = false, bdr_bot = false;
+          bdr_top = false, bdr_bot = false, bdr_lr = param.draw_barborder;
+          tmp_lr = true;
+
+          if (bar_d - bar_u < 3)
+            bdr_lr = false, tmp_lr = false;
 
           if (bar->n_id == 0)                             // bar color
             bar_color = color_bg;                         // no key -> bg color
@@ -342,7 +361,7 @@ void real_main() {
               bar_l++;
             }
           }
-          if (bar->n_id > 0 && (bar_d - bar_u >= 3)) {
+          if (bar->n_id > 0 && tmp_lr) {
             bdr_bot = bar->nbeg == bar_beg;   // whether draw bottom border
             if (bar_end == TICK_INF)          //
               bdr_top = false;                //
@@ -350,7 +369,6 @@ void real_main() {
               bdr_top = bar_end == bar->nend; // whether draw top border
 
             if (param.draw_barborder) {
-              // bdr_top = false, bdr_bot = false; // uncomment this to disable horizontal border
 
               if (bdr_bot) {
                 bar_d--;
@@ -414,12 +432,21 @@ void real_main() {
         }
       }
       // draw text
-      snprintf(message, sizeof(message), "NC %8d\nBPM %7.3f\nT %9d\nF %9d",
-               notedn_cnt,
-               60000000.0 / mpqn,
-               bars.screen_bot,
-               frame_cnt);
-      text_drawTxt(0, 0, message);
+      {
+        snprintf(message, sizeof(message), "P %9d\nBPM %7.3f",
+                 (si32)notedn_cnt - noteup_cnt,
+                 60000000.0 / mpqn);
+        text_drawTxt(0, 0, message);
+
+        ui32 secs = frame_cnt * param.fps_dn / param.fps_up, mins;
+        ui32 frms = frame_cnt - secs * param.fps_up / param.fps_dn;
+        mins = secs / 60, secs = secs % 60;
+        snprintf(message, sizeof(message), "Note: %9d\nTime: %02d:%02d+%03d Tick: %ld",
+                 notedn_cnt,
+                 mins, secs, frms,
+                 bars.screen_bot);
+        text_drawTxt(0, consts.keyboard_y - 2 * text_font_h, message);
+      }
 
       if (fwrite(frame.data, frame.len, 1, stdout) != 1)
         break;
@@ -435,4 +462,5 @@ void real_main() {
   fprintf(stderr, "frame_count = %d, tick_count = %ld, note_dn = %d\n", frame_cnt, tick_procd, notedn_cnt);
   TNL_clr(&q_mpqn);
   TNL_clr(&q_note_dn);
+  TNL_clr(&q_note_up);
 }

@@ -1,19 +1,21 @@
 #include "text.h"
 
-// #include "font-8x16.c.txt"
-#include "font-16x32.c.txt"
+#include "font-8x16.c.txt"
+// #include "font-16x32.c.txt"
 
 #define BGRA(R, G, B) (0xFF000000 + ((R) << 16) + ((G) << 8) + (B))
 // very dirty
 
 static const int chr_gap = 1;
-static const int font_w = 16, font_h = 32, font_cnt = 256; // should be times of 8
-#define FONT_ARRAY console_font_16x32
+static const int font_w = 8, font_h = 16, font_cnt = 256; // should be times of 8
+#define FONT_ARRAY console_font_8x16
 
 static ui32 *frame_ptr, *frame_end;
 static byte *font_data;
 static ui32 frame_width, frame_height;
 static ui32 char_size;
+
+int text_font_w, text_font_h;
 
 static const ui32 color_fg = BGRA(0xff, 0xff, 0xff);
 static const ui32 color_bg = BGRA(0x80, 0x80, 0x80);
@@ -28,6 +30,9 @@ int text_init(ui32 *frame, ui16 frame_w, ui16 frame_h) {
   frame_width = frame_w;
   frame_height = frame_h;
   char_size = font_w * font_h;
+
+  text_font_w = font_w;
+  text_font_h = font_h;
 
   font_data = malloc(char_size * font_cnt);
   if (font_data == NULL)
@@ -53,7 +58,8 @@ void text_fillGap(ui16 x, ui16 y, ui16 w) {
   ui32 *draw_ptr = frame_ptr + y * frame_width + x;
   for (ui16 dy = y, fy = 0; dy < frame_height && fy < font_h; dy++, fy++)
     for (ui16 dx = x, fx = 0; dx < frame_width && fx < w; dx++, fx++)
-      mix_color((byte *)(draw_ptr + fy * frame_width + fx), (byte *)&color_bg);
+      // mix_color((byte *)(draw_ptr + fy * frame_width + fx), (byte *)&color_bg);
+      draw_ptr[fy * frame_width + fx] = color_bg;
 }
 void text_drawChr(ui16 x, ui16 y, char ch) {
   ui32 color;
@@ -65,7 +71,8 @@ void text_drawChr(ui16 x, ui16 y, char ch) {
         color = color_fg;
       else
         color = color_bg;
-      mix_color((byte *)(draw_ptr + fy * frame_width + fx), (byte *)&color);
+      // mix_color((byte *)(draw_ptr + fy * frame_width + fx), (byte *)&color);
+      draw_ptr[fy * frame_width + fx] = color;
     }
 }
 void text_drawTxt(ui16 x, ui16 y, const char *text) {
@@ -80,7 +87,7 @@ void text_drawTxt(ui16 x, ui16 y, const char *text) {
       break;
     default:
       // if (!fol)
-      text_fillGap(x, y, chr_gap), x += chr_gap;
+      // text_fillGap(x, y, chr_gap), x += chr_gap;
       text_drawChr(x, y, ch), x += font_w;
     }
   }
