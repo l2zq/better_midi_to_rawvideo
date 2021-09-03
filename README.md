@@ -50,3 +50,10 @@ mpv:
 ffplay(ffmpeg):
 
 > ./a.out | ffplay -f rawvideo -pixel_format bgra -video_size 1920x1080 -framerate 60 -i -
+
+## 截图
+
+![](screenshots/mpv-shot0001.webp)
+![](screenshots/mpv-shot0002.webp)
+![](screenshots/mpv-shot0003.webp)
+![](screenshots/mpv-shot0004.webp)
