@@ -17,6 +17,7 @@ static inline void  TNL_del(TNum *item){
 }
 // clang-format on
 void TNL_ini(TNumList *lst) {
+  lst->cnt = 0;
   lst->tail = &(lst->head);
 }
 void TNL_clr(TNumList *lst) {
@@ -26,16 +27,19 @@ void TNL_clr(TNumList *lst) {
     TNL_del(item);
   }
   lst->tail = &(lst->head);
+  lst->cnt = 0;
 }
 TNum *TNL_pop(TNumList *lst) {
   TNum *item = lst->head.next, *nex;
   if ((nex = lst->head.next = item->next) == NULL)
     lst->tail = &(lst->head);
   TNL_del(item);
+  lst->cnt--;
   return nex;
 }
 TNum *TNL_push(TNumList *list) {
   TNum *item = TNL_new();
+  list->cnt++;
   list->tail->next = item;
   list->tail = item;
   item->next = NULL;

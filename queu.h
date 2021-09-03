@@ -6,9 +6,15 @@ typedef struct TNum TNum;
 struct TNum {
   TNum *next;
   tk_t  tick;
-  si32  numb;
+  byte  type;
+
+  byte  numb_byte;
+  ui16  numb_ui16;
+  ui32  numb_ui32;
+  ui64  numb_ui64;
 };
 typedef struct TNumList {
+  ui32 cnt;
   TNum head, *tail;
 } TNumList;
 

@@ -1,11 +1,18 @@
 **better_midi_to_rawvideo**
 
+[toc]
+
 ## 编译:
+
+下载 unifont，从`precompiled`复制`unifont-xx.x.xx.hex`到`make-font`，
+然后运行`makefont.py`，最后将生成的`unifont.bin`复制到可执行文件同目录下。
 
 > gcc \*.c -Ofast
 
-_用了 mmap, 所以 Windows 应该不能用，对 mmap-load.c 稍作修改就能用了。_  
-_也许不需要-Ofast，我不开也挺快的（（（_
+- \-DUSE_MMAP: 使用 mmap 读取 midi 文件，否则使用 stdio
+- \-DUSE_MPV: 由程序自行启动 mpv 播放(pipe+fork)
+
+以上两选项皆不可在 Windows 使用
 
 ## 使用:
 
@@ -13,6 +20,7 @@ _目前修改参数只能通过编辑源码_
 `param.`
 
 - `filename`: MIDI 文件名
+- `audiofile`: 音频文件，`-DUSE_MPV`时传递给 mpv
 - `frame_w`, `frame_h`: 画面的宽、高
 - `fps_up`, `fps_dn`: fps 由`fps_up/fps_dn`计算得到
 - `draw_barborder`: 音符条边框开关
@@ -38,11 +46,11 @@ _(别改太离谱的参数，根本没有越界检查的)_
 
 ## 视频输出：
 
-程序向 stdout 输出 BGRA 视频数据，可以用 mpv 或 ffplay(ffmpeg)接收：  
+若不在编译时指定-DUSE_MPV，则程序向 stdout 输出 BGRA 视频数据，可以用 mpv 或 ffplay(ffmpeg)接收：  
 mpv:
 
 > ./a.out | mpv --demuxer=rawvideo --demuxer-rawvideo-{w=1920,h=1080,fps=60,size=8294400,format=BGRA}  
-> \# 8294400 = 1920 \* 1080 \* 4  
+> \# 8294400 = 1920 _ 1080 _ 4  
 > \# 可以用 --audio-file= 指定同时播放的音频文件
 
 ffplay(ffmpeg):

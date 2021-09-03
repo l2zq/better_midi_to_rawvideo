@@ -8,6 +8,7 @@ typedef uint8_t  byte;
 typedef uint16_t ui16;
 typedef uint32_t ui32;
 typedef uint64_t ui64;
+typedef  int16_t si16;
 typedef  int32_t si32;
 typedef  int64_t si64;
 typedef ui64 no_t; // noteid

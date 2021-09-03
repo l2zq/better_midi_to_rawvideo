@@ -1,94 +1,115 @@
 #include "text.h"
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
 
-#include "font-8x16.c.txt"
-// #include "font-16x32.c.txt"
+static struct {
+  ui32 *offs;
+  byte *data;
+} font;
 
-#define BGRA(R, G, B) (0xFF000000 + ((R) << 16) + ((G) << 8) + (B))
-// very dirty
+static struct {
+  ui32 *dat;
+  ui16 w, h;
+} frame;
 
-static const int chr_gap = 1;
-static const int font_w = 8, font_h = 16, font_cnt = 256; // should be times of 8
-#define FONT_ARRAY console_font_8x16
-
-static ui32 *frame_ptr, *frame_end;
-static byte *font_data;
-static ui32 frame_width, frame_height;
-static ui32 char_size;
-
-int text_font_w, text_font_h;
-
-static const ui32 color_fg = BGRA(0xff, 0xff, 0xff);
-static const ui32 color_bg = BGRA(0x80, 0x80, 0x80);
-
-int text_free() {
-  free(font_data);
+int text_free(void) {
+  free(font.offs);
   return 0;
 }
-int text_init(ui32 *frame, ui16 frame_w, ui16 frame_h) {
-  frame_ptr = frame;
-  frame_end = frame + frame_w * frame_h;
-  frame_width = frame_w;
-  frame_height = frame_h;
-  char_size = font_w * font_h;
-
-  text_font_w = font_w;
-  text_font_h = font_h;
-
-  font_data = malloc(char_size * font_cnt);
-  if (font_data == NULL)
-    return -1;
-  for (int i = 0, off = 0; i < char_size * font_cnt / 8; i++)
-    for (int j = 7; j >= 0; j--, off++)
-      if (FONT_ARRAY[i] & (1 << j))
-        font_data[off] = 1;
-      else
-        font_data[off] = 0;
-  return 0;
+int text_init(ui32 *fptr, ui16 frame_w, ui16 frame_h) {
+  frame.dat = fptr;
+  frame.w = frame_w;
+  frame.h = frame_h;
+  int ret = -1, tmp_errno = 0;
+  FILE *fp = fopen("unifont.bin", "rb");
+  if (fp != NULL) {
+    long length;
+    if (fseek(fp, 0, SEEK_END) == 0 && (length = ftell(fp)) != -1 && fseek(fp, 0, SEEK_SET) == 0) {
+      if ((font.offs = malloc(length)) != NULL) {
+        if (fread(font.offs, 1, length, fp) == length) {
+          font.data = ((byte *)font.offs) + (sizeof(ui32) * 65536);
+          ret = 0;
+        } else
+          tmp_errno = errno, free(font.offs);
+      } else
+        tmp_errno = errno;
+    } else
+      tmp_errno = errno;
+    fclose(fp);
+  }
+  errno = tmp_errno;
+  return ret;
 }
 
-static inline void mix_color(byte *dest, byte *source) {
-  ui16 dst, src;
+static void draw_pixel(ui16 x, ui16 y, byte value) {
+  if (x > frame.w || y > frame.h)
+    return;
+  ui16 src = value ? 0xff : 0x80, dst;
+  byte *tgt = (byte *)(frame.dat + y * frame.w + x);
   for (int i = 0; i < 3; i++) {
-    dst = dest[i];
-    src = source[i];
-    dest[i] = dst / 8 + src * 7 / 8;
+    dst = tgt[i];
+    tgt[i] = dst / 8 + src * 7 / 8;
   }
 }
-void text_fillGap(ui16 x, ui16 y, ui16 w) {
-  ui32 *draw_ptr = frame_ptr + y * frame_width + x;
-  for (ui16 dy = y, fy = 0; dy < frame_height && fy < font_h; dy++, fy++)
-    for (ui16 dx = x, fx = 0; dx < frame_width && fx < w; dx++, fx++)
-      // mix_color((byte *)(draw_ptr + fy * frame_width + fx), (byte *)&color_bg);
-      draw_ptr[fy * frame_width + fx] = color_bg;
-}
-void text_drawChr(ui16 x, ui16 y, char ch) {
-  ui32 color;
-  ui32 *draw_ptr = frame_ptr + y * frame_width + x;
-  byte *font_ptr = font_data + ch * char_size;
-  for (ui16 dy = y, fy = 0; dy < frame_height && fy < font_h; dy++, fy++)
-    for (ui16 dx = x, fx = 0; dx < frame_width && fx < font_w; dx++, fx++) {
-      if (font_ptr[fy * font_w + fx])
-        color = color_fg;
-      else
-        color = color_bg;
-      // mix_color((byte *)(draw_ptr + fy * frame_width + fx), (byte *)&color);
-      draw_ptr[fy * frame_width + fx] = color;
+
+byte text_draw_char(ui16 rune, si16 dx, si16 dy) {
+  byte charWidth = 1;
+  if (font.offs[rune] == 0xffffffff)
+    rune = '?';
+  ui32 offset = font.offs[rune];
+  if (offset & (1 << 31)) {
+    charWidth = 2;
+    offset &= ~(1 << 31);
+  }
+  si16 x, y;
+  byte *charData = font.data + offset, currByte;
+  for (ui16 fy = 0; fy < TEXT_LINE_HEIGHT; fy++) {
+    for (ui16 bi = 0, fx = 0; bi < charWidth; bi++) {
+      currByte = *(charData++);
+      for (ui16 bx = 0; bx < 8; bx++, fx++)
+        if ((x = dx + fx) >= 0 && (y = dy + fy) >= 0)
+          draw_pixel(x, y, currByte & (1 << (7 - bx)));
     }
+  }
+  return charWidth * 8;
 }
-void text_drawTxt(ui16 x, ui16 y, const char *text) {
-  char ch;
-  ui16 lx = x;
-  // bool fol = true; // first of line
-  while ((ch = *(text++)) != '\0') {
-    switch (ch) {
-    case '\n':
-      // fol = true;
-      y += font_h, x = lx;
-      break;
-    default:
-      // if (!fol)
-      // text_fillGap(x, y, chr_gap), x += chr_gap;
-      text_drawChr(x, y, ch), x += font_w;
+void text_draw_utf8(const char *str, si16 dx, si16 dy) {
+  byte *p = (byte *)str;
+  ui16 rune = 0, left = dx;
+  while (*p) {
+    rune = 0;
+    byte b1 = *p;
+    p++;
+    if ((b1 & 0x80) == 0) {
+      rune = b1;
+    } else {
+      byte b2 = *p;
+      p++;
+      if (b2 == 0) {
+        break;
+      }
+      if ((b1 & 0xE0) == 0xC0) {
+        rune = ((b1 & 0x1F) << 6) | (b2 & 0x3F);
+      } else {
+        byte b3 = *p;
+        p++;
+        if (b3 == 0) {
+          break;
+        }
+        if ((b1 & 0xf0) == 0xE0) {
+          rune =
+              ((b1 & 0x0F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F);
+        } else {
+          break;
+        }
+      }
+    }
+    if (rune == '\n')
+      dx = left, dy += TEXT_LINE_HEIGHT;
+    else {
+      byte charWidth = text_draw_char(rune, dx, dy);
+      dx += charWidth;
     }
   }
 }
