@@ -34,13 +34,9 @@ _(别改太离谱的参数，根本没有越界检查的)_
 
 - `tckk_poolsize`: 预先分配内存的音符数量（MIDI 中同时按下的键的个数。）
 - `bars_poolsize`: 预先分配的音符条数量（屏幕上的音符条，指每一段有边界的矩形，即无音符的部分也是音符条）
-- `queu_poolsize`: 预先分配的某队列的元素数量，目前这个队列用来存放设置节拍事件(Meta Set-Tempo)和有事件的 Tick 处的 Note-ON 事件数(0x90)。
-  _(其实是两个队列，但省略细节)_
+- `queu_poolsize`: 预先分配的某队列的元素数量，用于存放屏幕顶部传递到屏幕底部的事件。
 
-以上数值若足够大（并不用多大），运行时就不需要 malloc 分配内存。
-
-文字字体：去看`text.c`，写得很烂，但很好改（  
-字体是用的 [https://github.com/idispatch/raster-fonts](https://github.com/idispatch/raster-fonts)
+以上数值若足够大，运行时就不需要 malloc 分配内存。
 
 ## 视频输出：
 
@@ -48,7 +44,7 @@ _(别改太离谱的参数，根本没有越界检查的)_
 mpv:
 
 > ./a.out | mpv --demuxer=rawvideo --demuxer-rawvideo-{w=1920,h=1080,fps=60,size=8294400,format=BGRA}  
-> \# 8294400 = 1920 _ 1080 _ 4  
+> \# 8294400 = 1920 \* 1080 \* 4  
 > \# 可以用 --audio-file= 指定同时播放的音频文件
 
 ffplay(ffmpeg):
