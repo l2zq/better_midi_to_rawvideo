@@ -1,7 +1,5 @@
 **better_midi_to_rawvideo**
 
-[toc]
-
 ## 编译:
 
 下载 unifont，从`precompiled`复制`unifont-xx.x.xx.hex`到`make-font`，
