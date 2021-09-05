@@ -9,6 +9,8 @@
 
 - \-DUSE_MMAP: 使用 mmap 读取 midi 文件，否则使用 stdio
 - \-DUSE_MPV: 由程序自行启动 mpv 播放(pipe+fork)
+- \-DENABLE_TEXT: 启用文本绘制
+- \-DENABLE_METALIST: 启用Meta事件列表
 
 以上两选项皆不可在 Windows 使用
 

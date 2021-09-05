@@ -37,7 +37,8 @@ int text_init(ui32 *fptr, ui16 frame_w, ui16 frame_h) {
     } else
       tmp_errno = errno;
     fclose(fp);
-  }
+  } else
+    tmp_errno = errno;
   errno = tmp_errno;
   return ret;
 }

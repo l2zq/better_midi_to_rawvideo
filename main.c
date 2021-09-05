@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <strings.h>
 #include <signal.h>
@@ -9,14 +11,24 @@
 #include "tckk.h"
 #include "bars.h"
 #include "queu.h"
-#include "text.h"
 
+#ifdef ENABLE_TEXT
+#include "text.h"
+#endif
+
+#if defined(ENABLE_TEXT) && defined(ENABLE_METALIST)
+#define _METALIST_ENABLE
+#endif
+
+#ifdef _METALIST_ENABLE
 #define METALIST_LESS 8
 #define METALIST_MID 16
 #define METALIST_MAX 32
 #define METALIST_EXTREME 256
+#endif
 
 #ifdef USE_MPV
+#include <fcntl.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #endif
@@ -74,7 +86,11 @@ bool mpv_start() {
       return false;
     pipe_r = pipefd[0];
     pipe_w = pipefd[1];
+    // fprintf(stderr, "a. ioctl(fd, F_GETPIPE_SZ) = %d\n", fcntl(pipefd[0], F_GETPIPE_SZ));
+    // fprintf(stderr, "b. ioctl(fd, F_SETPIPE_SZ) = %d\n", fcntl(pipefd[0], F_SETPIPE_SZ, 1048576));
+    // fprintf(stderr, "c. ioctl(fd, F_GETPIPE_SZ) = %d\n", fcntl(pipefd[0], F_GETPIPE_SZ));
   }
+
   switch ((mpv_pid = fork())) {
   case -1: // failed
     tmp_errno = errno;
@@ -84,7 +100,7 @@ bool mpv_start() {
     return false;
   case 0: // child process - close write
     close(pipe_w);
-    char s1[32], s2[32], s3[32], s4[32], s5[32], s6[512], s7[512];
+    char s1[32], s2[32], s3[32], s4[32], s5[32], s6[512], s7[512], s8[64]; //, s9[64];
     snprintf(s1, sizeof(s1), "--demuxer-rawvideo-w=%d", param.frame_w);
     snprintf(s2, sizeof(s2), "--demuxer-rawvideo-h=%d", param.frame_h);
     snprintf(s3, sizeof(s3), "--demuxer-rawvideo-fps=%d", param.fps_up / param.fps_dn);
@@ -95,10 +111,13 @@ bool mpv_start() {
       snprintf(s7, sizeof(s7), "--audio-file=%s", param.audiofile);
     else
       s7[0] = '\0';
+    snprintf(s8, sizeof(s8), "--demuxer-max-bytes=%ld", frame.len * 1 * param.fps_up / param.fps_dn);
+    // snprintf(s9, sizeof(s9), "--demuxer-max-back-bytes=%ld", frame.len * 1 * param.fps_up / param.fps_dn);
+    fprintf(stderr, "s8 = %s\n", s8);
     if (execlp("mpv", "mpv",
                "--demuxer=rawvideo",
                "--demuxer-rawvideo-format=BGRA",
-               s1, s2, s3, s4, s5, s6, s7, NULL) == -1) {
+               s1, s2, s3, s4, s5, s6, s7, s8, NULL) == -1) {
       tmp_errno = errno;
       close(pipe_r);
       errno = tmp_errno;
@@ -125,18 +144,24 @@ void set_screen_height(void) {
   // param.screen_height <<= 1;
   // param.screen_height = midi.divs / 2;
 }
-int main(void) {
+int main(int argc, char **argv) {
   fp_out = stdout;
-  param.audiofile = NULL;
-
-  signal(SIGPIPE, SIG_IGN);
 
   param.midifile = NULL;
   param.audiofile = NULL;
 
+  signal(SIGPIPE, SIG_IGN);
+
+  if (argc > 1) {
+    param.midifile = argv[1];
+    if (argc > 2) {
+      param.audiofile = argv[2];
+    }
+  }
+
   param.frame_w = 1280;
   param.frame_h = 720;
-  param.fps_up = 60; // fps = fps_up / fps_dn
+  param.fps_up = 144; // fps = fps_up / fps_dn
   param.fps_dn = 1;
 
   param.draw_barborder = true;
@@ -144,13 +169,6 @@ int main(void) {
   param.draw_keyboard = true;
   param.keyboard_h = param.frame_h / 10;
   param.blackkey_h = param.frame_h / 15;
-
-#ifdef USE_MPV
-  if (!mpv_start()) {
-    perror("mpv_start");
-    return -1;
-  }
-#endif
 
   {
     frame.len = param.frame_w * param.frame_h * sizeof(ui32);
@@ -164,12 +182,14 @@ int main(void) {
     // no need to clear frame
   }
 
+#ifdef ENABLE_TEXT
   if (text_init(frame.data, param.frame_w, param.frame_h) == -1) {
     perror("text_init");
     free(consts.bar_y);
     free(frame.data);
     return -1;
   }
+#endif
 
   int ret = 0, midi_ret;
   if (file_load(param.midifile)) {
@@ -195,7 +215,12 @@ int main(void) {
             param.queu_poolsize = 2048;
             if (queu_init(param.queu_poolsize) == 0) {
               fprintf(stderr, "\e[2Kmidi: type %hu ntrk %hu divs %hu\n", midi.type, midi.ntrk, midi.divs);
-              real_main();
+#ifdef USE_MPV
+              if (!mpv_start())
+                ret = -1, perror("mpv_start");
+              else
+#endif
+                real_main();
               queu_free();
             } else
               ret = -1, perror("queu_init");
@@ -217,7 +242,9 @@ int main(void) {
   } else
     ret = -1, perror("file_load");
 
+#ifdef ENABLE_TEXT
   text_free();
+#endif
 
   free(frame.data);
   if (fp_out != stdout)
@@ -237,8 +264,11 @@ int main(void) {
 #define LIST_NOTE_UP 8
 #define LIST_NOTE_DN 9
 
-TNumList q_list;
+#ifdef _METALIST_ENABLE
 TNumList q_meta;
+#endif
+
+TNumList q_list;
 bool tick_ended;
 tk_t tick_procd; // processed tick count
 void tick_begin() {
@@ -287,6 +317,7 @@ tk_t tick_runto(tk_t wanted) { // should call everytime scr top time increases (
               }
               case 0xf:
                 if (midi.evt.b == 0xff) {
+#ifdef _METALIST_ENABLE
                   TNum *tnm = TNL_push(&q_meta);
                   tnm->tick = tick_procd;
                   tnm->type = LIST_META;
@@ -294,6 +325,7 @@ tk_t tick_runto(tk_t wanted) { // should call everytime scr top time increases (
                   tnm->numb_ui16 = (ui16)it;
                   tnm->numb_ui32 = midi.evt.msys.size;
                   tnm->numb_ui64 = (ui64)midi.evt.msys.data;
+#endif
                   if (midi.evt.msys.type == 0x51 && midi.evt.msys.size >= 3) {
                     ui32 mpqn = midi.evt.msys.data[0];
                     mpqn = (mpqn << 8) | midi.evt.msys.data[1];
@@ -396,7 +428,9 @@ static inline void draw_keyboard_borders() {
 
 void real_main() {
   TNL_ini(&q_list);
+#ifdef _METALIST_ENABLE
   TNL_ini(&q_meta);
+#endif
   // setup bars
   bars.screen_bot = 0;
   bars.screen_top = bars.screen_bot + param.screen_height;
@@ -412,14 +446,18 @@ void real_main() {
        next_midi = 0, next_frame = 0;
   tm_t midi_interval = mpqn * param.fps_up,
        frame_interval = 1000000 * midi.divs * param.fps_dn;
-  ui64 frame_cnt = 0, notedn_cnt = 0, noteup_cnt = 0;
 
+  ui64 frame_cnt = 0, notedn_cnt = 0, noteup_cnt = 0, polyphony_peak = 0;
+#ifdef ENABLE_TEXT
   char message[256];
+#endif
 
+#ifdef _METALIST_ENABLE
   ui32 d1_second_frame_count = param.fps_up / param.fps_dn,
        d2_second_frame_count = param.fps_up / param.fps_dn / 2,
        d4_second_frame_count = param.fps_up / param.fps_dn / 4,
        d8_second_frame_count = param.fps_up / param.fps_dn / 8;
+#endif
 
   while (true) {
     bool run_midi = (curr_time == next_midi);
@@ -436,6 +474,11 @@ void real_main() {
           break;
         case LIST_NOTE_DN:
           notedn_cnt += tnm->numb_ui32;
+          {
+            ui64 polyphony = notedn_cnt - noteup_cnt;
+            if (polyphony > polyphony_peak)
+              polyphony_peak = polyphony;
+          }
           break;
         case LIST_FEND:
           midi_endd = true;
@@ -563,10 +606,12 @@ void real_main() {
                 frame.data[y * param.frame_w + bar_l - 1] = color_border;
             }
           }
-          draw_keyboard_borders();
         }
       }
-      // draw text
+      if (param.draw_keyboard)
+        draw_keyboard_borders();
+        // draw text
+#ifdef ENABLE_TEXT
       {
         ui32 secs = frame_cnt * param.fps_dn / param.fps_up, mins;
         ui32 frms = frame_cnt - secs * param.fps_up / param.fps_dn;
@@ -587,6 +632,7 @@ void real_main() {
           text_draw_utf8(message, 64, 64);
         }
 
+#ifdef _METALIST_ENABLE
         {
           static ui64 last_event_increase = 0, last_event_count = 0;
           bool arrow_not_drawn = true;
@@ -660,6 +706,7 @@ void real_main() {
           }
           last_event_count = q_meta.cnt;
         }
+#endif
         snprintf(message, sizeof(message), "复音 %9lu\nBPM %10.3lf",
                  notedn_cnt - noteup_cnt,
                  60000000.0 / mpqn);
@@ -670,6 +717,7 @@ void real_main() {
                  bars.screen_bot, tick_procd);
         text_draw_utf8(message, 0, consts.keyboard_y - 3 * TEXT_LINE_HEIGHT);
       }
+#endif
       if (fwrite(frame.data, frame.len, 1, fp_out) != 1)
         break;
       if (midi_endd)
@@ -681,9 +729,11 @@ void real_main() {
     }
     curr_time = next_midi < next_frame ? next_midi : next_frame;
   }
-  fprintf(stderr, "\e[2Kframe_count = %lu, tick_count = %ld, note_dn = %lu\n",
-          frame_cnt, tick_procd, notedn_cnt);
+  fprintf(stderr, "\e[2Kframe_count = %lu, tick_count = %ld, note_dn = %lu, poly_peak = %lu\n",
+          frame_cnt, tick_procd, notedn_cnt, polyphony_peak);
 
+#ifdef _METALIST_ENABLE
   TNL_clr(&q_meta);
+#endif
   TNL_clr(&q_list);
 }
