@@ -1,5 +1,7 @@
 .vscode
 
+test-*.sh
+
 a.out
 unifont.bin
 make-font/unifont-*.hex

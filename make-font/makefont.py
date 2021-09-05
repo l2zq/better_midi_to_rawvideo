@@ -1,4 +1,5 @@
 #!/bin/env python3
+import sys
 import struct
 
 ui32le = struct.Struct('<I')
@@ -18,7 +19,7 @@ def glyph_line_to_bytes(glyph_data):
     assert len(glyph_data) in (32, 64)
     return bytes(map(lambda i: int(glyph_data[i: i+2], 16), range(0, len(glyph_data), 2)))
 
-with open('unifont-13.0.06.hex', 'r') as fp:
+with open(sys.argv[1], 'r') as fp:
     for cp, glyph_data in map(lambda x: (int(x[0], 16), x[2]),
             map(lambda l: l.strip().partition(':'),
                 filter(len, fp))):
